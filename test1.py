@@ -23,4 +23,4 @@ def  test_1():
 
 if __name__ == "__main__":
     test_1()
-    print("Use rx to call readlines")
+    print("Use dump() to call readlines")
