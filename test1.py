@@ -2,7 +2,7 @@
 
 from shelljob import proc, job
 import sys
-from multiprocessing import Process, Pipe
+from multiprocessing import Process, Pipe, Queue
 from subprocess import check_output,Popen
 import subprocess
 from time import sleep
@@ -11,24 +11,32 @@ cout=sys.stdout.write
 
 g=None
 rx=None
-ttyx='/dev/ttys003'
+xtty='/dev/ttys008'
 
 def xstub(*args, **kwargs ):
     xout=kwargs.pop("xout",sys.stderr)
 
     xout.write("xstub: %s\n" % str(args))
 
-def very_long_ls(dirname, tty, mypipe):
-    xstub("very_long_ls", dirname )
+def very_long_ls(inq, outq):
+    # inq => send to child
+    # outq => send to parent
+    global xtty
+    dirname='/'
+    xstub("I say very_long_ls starting")
+    outq.put(["ls is running"])
     try:
-        with open(tty, 'w') as ttyout:
-            p=Popen(['/bin/ls','-alR', dirname], stdout=mypipe,stderr=mypipe)
-            mypipe.send(["ls is running"])
-            xstub( "child rx:", mypipe.recv(),xout=ttyout)
-            while p.poll():
-                sleep(0.3)
-
-
+        with open(xtty, 'w') as ttyout:
+            p=Popen(['/bin/ls','-alR', dirname], stdout=ttyout,stderr=ttyout)
+            sleep(2)
+            while p.poll() == None:
+                r=inq.get()
+                xstub("parent said:",r)
+                if r[1]=='quit':
+                    break
+                outq.put(["hi.  You said:",r])
+                sleep(1)
+        xstub("leaving inner loop")
         p.wait()
     except BaseException as e:
         xstub("Caught: " + str(e))
@@ -49,16 +57,18 @@ def  test_1():
 
 if __name__ == "__main__":
 
-    parent_pipe, child_pipe=Pipe()
-    p = Process(target=very_long_ls,args=('/',ttyx,child_pipe))
+    parentq=Queue() # send to parent
+    childq=Queue()  # send to child
+    p = Process(target=very_long_ls,args=(childq,parentq))
     p.start()
     print("p is running: " + str(p.pid))
 
     while p.is_alive():
-        #res=raw_input("q?")
-        print parent_pipe.recv()
-        # print("You said: " + res)
-        # parent_pipe.send(["user said",res])
+        r=parentq.get()
+        print("child said:",r)
+
+        res=raw_input("q?")
+        childq.put(["user said:",res])
 
     
     p.join()
